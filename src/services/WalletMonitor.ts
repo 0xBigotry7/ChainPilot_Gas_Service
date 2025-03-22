@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { createComponentLogger } from '../utils/logger';
 import { supabase, updateWalletGasStatus } from '../utils/supabase';
+import { getPrivateKey, getRequiredEnv } from '../utils/envHelper';
 
 const logger = createComponentLogger('WalletMonitor');
 
@@ -46,20 +47,14 @@ export class WalletMonitor {
     this.cooldownPeriodMs = Number(process.env.COOLDOWN_PERIOD_MINUTES || "10") * 60 * 1000;
     
     try {
-      // Validate environment variables
-      const requiredEnvVars = [
-        'ARBITRUM_RPC_URL',
-        'FUNDER_PRIVATE_KEY',
-        'FUNDER_ADDRESS'
-      ];
+      // Get required environment variables using our helper functions
+      const rpcUrl = getRequiredEnv('ARBITRUM_RPC_URL');
+      const funderAddress = getRequiredEnv('FUNDER_ADDRESS');
       
-      for (const envVar of requiredEnvVars) {
-        if (!process.env[envVar]) {
-          throw new Error(`${envVar} not set`);
-        }
-      }
-
-      this.provider = new ethers.JsonRpcProvider(process.env.ARBITRUM_RPC_URL, undefined, {
+      // Get and format the private key using our special helper
+      const privateKey = getPrivateKey('FUNDER_PRIVATE_KEY');
+      
+      this.provider = new ethers.JsonRpcProvider(rpcUrl, undefined, {
         staticNetwork: true,
         polling: true,
         pollingInterval: 4000,
@@ -67,7 +62,7 @@ export class WalletMonitor {
         batchStallTime: 0
       });
       
-      this.funderWallet = new ethers.Wallet(process.env.FUNDER_PRIVATE_KEY!, this.provider);
+      this.funderWallet = new ethers.Wallet(privateKey, this.provider);
       this.gasAmountToSend = ethers.parseEther(process.env.GAS_AMOUNT_TO_SEND || "0.001");
       this.maxTxPerMinute = Number(process.env.MAX_TX_PER_MINUTE || "10");
       this.txCount = new Map();
@@ -88,7 +83,7 @@ export class WalletMonitor {
       }
 
       // Validate funder wallet
-      if (this.funderWallet.address.toLowerCase() !== process.env.FUNDER_ADDRESS!.toLowerCase()) {
+      if (this.funderWallet.address.toLowerCase() !== funderAddress.toLowerCase()) {
         throw new Error('Funder wallet address does not match private key');
       }
     } catch (error) {
