@@ -243,12 +243,21 @@ export class WalletMonitor {
             
             // Check cooldown period
             if (this.isInCooldown(walletAddress)) {
-              logger.info(`⏱️ Wallet ${walletAddress} is in cooldown period. Skipping gas airdrop.`);
+              logger.warn(`🕒 Wallet ${walletAddress} is in cooldown period. Skipping gas airdrop.`);
               return;
             }
             
-            // All checks passed, send gas immediately
-            await this.sendGas(walletAddress);
+            // Add to cooldown immediately to prevent duplicate transactions
+            this.recentlyFundedWallets.set(walletAddress.toLowerCase(), Date.now());
+            logger.info(`🕒 Added wallet ${walletAddress} to cooldown for ${this.cooldownPeriodMs/60000} minutes`);
+            
+            // Send gas
+            try {
+              const tx = await this.sendGas(walletAddress);
+              logger.info(`✅ Database updated for wallet ${walletAddress} with gas amount ${ethers.formatEther(this.gasAmountToSend)} ETH`);
+            } catch (dbError) {
+              logger.error(`❌ Failed to update database for ${walletAddress}:`, dbError);
+            }
           } catch (error) {
             logger.error(`❌ Error processing username change event:`, error);
           }
@@ -326,8 +335,8 @@ export class WalletMonitor {
       const receipt = await this.withRetry(() => tx.wait());
       
       if (receipt && receipt.status === 1) {
-        // Add this wallet to the recently funded list with current timestamp
-        this.recentlyFundedWallets.set(to.toLowerCase(), Date.now());
+        // Receipt is confirmed, don't update cooldown again since we already did it before sending
+        // The cooldown is set before the transaction is sent to prevent duplicates
         
         // Check remaining balance
         const remainingBalance = await this.provider.getBalance(this.funderWallet.address);
