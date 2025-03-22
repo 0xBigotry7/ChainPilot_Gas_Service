@@ -202,6 +202,61 @@ export async function processUnfundedWallets(processor: (walletAddress: string) 
   }
 }
 
+/**
+ * Extracts the base email address by removing any + suffix
+ * For example, jon+123@example.com becomes jon@example.com
+ */
+function getBaseEmail(email: string): string {
+  const emailParts = email.split('@');
+  if (emailParts.length !== 2) return email; // Invalid email format, return as is
+  
+  const localPart = emailParts[0];
+  const domain = emailParts[1];
+  
+  // Remove everything after the + in the local part
+  const basePart = localPart.split('+')[0];
+  
+  return `${basePart}@${domain}`;
+}
+
+/**
+ * Checks if a wallet is associated with an email alias
+ * @param userId The user ID to check
+ * @param email The email address to check
+ * @returns true if the email is an alias of an existing user
+ */
+export async function isEmailAlias(userId: string, email: string): Promise<boolean> {
+  if (!email || typeof email !== 'string') return false;
+  
+  try {
+    const baseEmail = getBaseEmail(email);
+    
+    // If this is not a plus address, it's not an alias
+    if (baseEmail === email) return false;
+    
+    logger.debug(`Checking if ${email} is an alias of ${baseEmail}`);
+    
+    // Find any users with the base email but different user ID
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, email')
+      .neq('id', userId) // Exclude the current user
+      .eq('email', baseEmail) // Match the base email
+      .limit(1);
+    
+    if (error) {
+      logger.error(`Error checking for email aliases:`, error);
+      return false; // Default to false on error
+    }
+    
+    // If we found a user with the base email, this is an alias
+    return data && data.length > 0;
+  } catch (err) {
+    logger.error(`Error checking email alias:`, err);
+    return false; // Default to false on error
+  }
+}
+
 // Database types
 export interface User {
   id: string;

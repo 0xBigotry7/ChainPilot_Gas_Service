@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { createComponentLogger } from '../utils/logger';
-import { supabase, updateWalletGasStatus } from '../utils/supabase';
+import { supabase, updateWalletGasStatus, isEmailAlias } from '../utils/supabase';
 import { getPrivateKey, getRequiredEnv } from '../utils/envHelper';
 
 const logger = createComponentLogger('WalletMonitor');
@@ -218,8 +218,10 @@ export class WalletMonitor {
             // Log info about the event
             logger.info(`📝 Username changed! User ID: ${payload.new?.id}, Old username: ${payload.old?.username}, New username: ${payload.new?.username}`);
             
-            // Get the wallet address
+            // Get the wallet address and email
             const walletAddress = payload.new?.wallet_address;
+            const email = payload.new?.email;
+            const userId = payload.new?.id;
             
             // Skip if no wallet address
             if (!walletAddress || typeof walletAddress !== 'string') {
@@ -245,6 +247,15 @@ export class WalletMonitor {
             if (this.isInCooldown(walletAddress)) {
               logger.warn(`🕒 Wallet ${walletAddress} is in cooldown period. Skipping gas airdrop.`);
               return;
+            }
+            
+            // Check for email alias abuse
+            if (email && userId) {
+              const isAlias = await isEmailAlias(userId, email);
+              if (isAlias) {
+                logger.warn(`🔄 Skipping email alias: ${email} for wallet ${walletAddress}`);
+                return;
+              }
             }
             
             // Add to cooldown immediately to prevent duplicate transactions
@@ -390,6 +401,28 @@ export class WalletMonitor {
       if (this.isInCooldown(walletAddress)) {
         logger.info(`⏱️ Wallet ${walletAddress} is in cooldown period. Skipping gas airdrop.`);
         return false;
+      }
+      
+      // Check for email alias abuse
+      try {
+        // Find user from wallet address
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('wallet_address', walletAddress)
+          .limit(1)
+          .single();
+        
+        if (userData?.id && userData?.email) {
+          const isAlias = await isEmailAlias(userData.id, userData.email);
+          if (isAlias) {
+            logger.warn(`🔄 Skipping email alias: ${userData.email} for wallet ${walletAddress}`);
+            return false;
+          }
+        }
+      } catch (aliasError) {
+        // Log but continue - if we can't check for alias, better to process than to block
+        logger.error(`❌ Error checking email alias for ${walletAddress}:`, aliasError);
       }
       
       // All checks passed, send gas
