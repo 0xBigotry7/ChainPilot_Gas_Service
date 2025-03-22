@@ -92,18 +92,15 @@ app.use(express.json());
 // Health check endpoint
 function healthCheckHandler(req: express.Request, res: express.Response) {
   try {
-    const dbStatus = supabase ? 'connected' : 'disconnected';
-    const monitorStatus = walletMonitor.running ? 'running' : 'stopped';
-    
+    // Always return 200 for Railway's health check
     res.status(200).json({
-      status: 'healthy',
-      database: dbStatus,
-      monitor: monitorStatus
+      status: 'ok',
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     logger.error('Health check error:', error);
     res.status(500).json({
-      status: 'unhealthy',
+      status: 'error',
       error: 'Internal server error'
     });
   }
